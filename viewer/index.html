@@ -1,0 +1,1806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CS2-DEM-RENDERER Viewer</title>
+<style>
+:root {
+  --bg:       #0c0e18;
+  --s1:       #13162a;
+  --s2:       #1c2035;
+  --s3:       #252942;
+  --border:   #2d3354;
+  --borderhi: #3d4464;
+  --text:     #dde2f5;
+  --text2:    #8892c8;
+  --text3:    #535d8a;
+  --accent:   #7b8ef7;
+  --green:    #4cc87a;
+  --red:      #f76e65;
+  --orange:   #ffa04c;
+  --purple:   #c084fc;
+  --teal:     #38d9c9;
+  --yellow:   #f0c040;
+  --sidebar:  280px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.header {
+  height: 52px;
+  background: var(--s1);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.header-logo {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.3px;
+}
+.header-logo span { color: var(--accent); }
+.header-stats {
+  display: flex;
+  gap: 12px;
+  flex: 1;
+}
+.stat-pill {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 11px;
+  color: var(--text2);
+}
+.stat-pill b { color: var(--text); }
+.header-right { display: flex; align-items: center; gap: 8px; }
+.btn-icon {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  border-radius: 6px;
+  padding: 5px 9px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: border-color 0.15s, color 0.15s;
+}
+.btn-icon:hover { border-color: var(--borderhi); color: var(--text); }
+
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+.layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+.sidebar {
+  width: var(--sidebar);
+  flex-shrink: 0;
+  background: var(--s1);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.map-filter {
+  padding: 10px 10px 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.map-pill {
+  padding: 3px 9px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  transition: all 0.12s;
+}
+.map-pill:hover { border-color: var(--borderhi); color: var(--text2); }
+.map-pill.active {
+  border-color: currentColor;
+  background: color-mix(in srgb, currentColor 15%, transparent);
+}
+.map-pill.all { color: var(--text2); }
+.map-pill.all.active { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.map-dust2   { --mc: #c89220; color: var(--mc); }
+.map-mirage  { --mc: #e8743b; color: var(--mc); }
+.map-nuke    { --mc: #4cc87a; color: var(--mc); }
+.map-ancient { --mc: #c084fc; color: var(--mc); }
+.map-overpass{ --mc: #7b8ef7; color: var(--mc); }
+.map-train   { --mc: #8892c8; color: var(--mc); }
+.map-inferno { --mc: #f76e65; color: var(--mc); }
+.map-anubis  { --mc: #f0c040; color: var(--mc); }
+
+.sidebar-actions {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.btn-full {
+  width: 100%;
+  background: var(--s2);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.12s;
+  text-align: left;
+}
+.btn-full:hover { border-color: var(--borderhi); color: var(--text); }
+
+.match-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.match-tree::-webkit-scrollbar { width: 4px; }
+.match-tree::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.match-item { cursor: pointer; user-select: none; }
+.match-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  margin: 1px 4px;
+  transition: background 0.1s;
+}
+.match-header:hover { background: var(--s2); }
+.match-expand { color: var(--text3); font-size: 10px; width: 12px; }
+.match-map-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.match-name {
+  color: var(--text2);
+  font-size: 11px;
+  font-family: monospace;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.match-count {
+  color: var(--text3);
+  font-size: 10px;
+  background: var(--s2);
+  border-radius: 8px;
+  padding: 1px 5px;
+}
+
+.clip-list { display: none; }
+.clip-list.open { display: block; }
+.clip-row {
+  display: grid;
+  grid-template-columns: 1fr 22px 42px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 28px;
+  border-radius: 4px;
+  margin: 1px 4px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.clip-row.group-start { margin-top: 6px; padding-top: 7px; border-top: 1px solid var(--border); }
+.clip-row:hover { background: var(--s2); }
+.clip-row.selected { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.clip-row.selected .clip-name { color: var(--accent); }
+.clip-name { color: var(--text3); font-size: 11px; font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clip-team { font-size: 10px; font-weight: 700; text-align: center; }
+.clip-team.team-ct { color: var(--accent); }
+.clip-team.team-t  { color: var(--red); }
+.clip-dur { color: var(--text3); font-size: 10px; text-align: right; font-variant-numeric: tabular-nums; }
+
+.sidebar-message {
+  padding: 20px 12px;
+  text-align: center;
+  color: var(--text3);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* ── Main content ────────────────────────────────────────────────────────── */
+.content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.content::-webkit-scrollbar { width: 6px; }
+.content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── Empty state ─────────────────────────────────────────────────────────── */
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text3);
+}
+.empty-icon { font-size: 40px; opacity: 0.4; }
+.empty-state p { font-size: 14px; }
+.empty-state small { font-size: 11px; }
+
+/* ── Viewer ──────────────────────────────────────────────────────────────── */
+.viewer { display: flex; flex-direction: column; flex: 1; }
+
+.viewer-top {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  min-height: 0;
+}
+
+.video-wrap {
+  flex: 1;
+  min-width: 0;
+  background: #000;
+  position: relative;
+  aspect-ratio: 16/9;
+}
+.video-wrap video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+.video-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.6);
+  color: var(--text2);
+  font-size: 12px;
+  gap: 8px;
+}
+.video-overlay.hidden { display: none; }
+.spinner {
+  width: 16px; height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.meta-panel {
+  width: 232px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.meta-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.meta-stat {
+  background: var(--s1);
+  padding: 10px 12px;
+}
+.meta-stat-label {
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 4px;
+}
+.meta-stat-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+}
+.meta-stat.wide { grid-column: span 2; }
+
+.action-breakdown {
+  flex: 1;
+  padding: 10px 12px;
+  overflow-y: auto;
+}
+.action-breakdown-title {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text3);
+  margin-bottom: 8px;
+}
+.action-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+.action-bar-label {
+  font-family: monospace;
+  font-size: 11px;
+  width: 20px;
+  color: var(--text2);
+  font-weight: 600;
+}
+.action-bar-track {
+  flex: 1;
+  height: 4px;
+  background: var(--s3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.action-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+.action-bar-pct {
+  font-size: 10px;
+  color: var(--text3);
+  width: 28px;
+  text-align: right;
+}
+
+/* ── Keyboard overlay ────────────────────────────────────────────────────── */
+.keyboard-wrap {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.keyboard {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.kb-cluster { display: flex; flex-direction: column; gap: 4px; }
+.kb-row {
+  display: flex;
+  gap: 4px;
+}
+.kb-center { justify-content: center; }
+.key {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: default;
+  user-select: none;
+  transition: background 0.06s, border-color 0.06s, color 0.06s, box-shadow 0.06s;
+}
+.key-label { font-size: 13px; font-weight: 700; color: var(--text2); line-height: 1; font-family: monospace; }
+.key-sub   { font-size: 8px; color: var(--text3); margin-top: 2px; }
+.key.active .key-label { color: var(--key-color, var(--accent)); }
+.key.active .key-sub   { color: color-mix(in srgb, var(--key-color, var(--accent)) 60%, var(--text3)); }
+.key.active {
+  border-color: var(--key-color, var(--accent));
+  background: color-mix(in srgb, var(--key-color, var(--accent)) 16%, var(--s2));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--key-color, var(--accent)) 35%, transparent);
+}
+
+.kb-sep {
+  width: 1px;
+  background: var(--border);
+  align-self: stretch;
+  margin: 4px 0;
+}
+
+.kb-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.kb-legend-row {
+  display: flex;
+  gap: 10px;
+}
+.kb-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--text3);
+}
+.kb-legend-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+}
+
+/* ── Timeline ────────────────────────────────────────────────────────────── */
+.timeline-wrap {
+  border-bottom: 1px solid var(--border);
+  display: flex;
+}
+.timeline-labels {
+  width: 28px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: 1px;
+  background: var(--s1);
+  border-right: 1px solid var(--border);
+}
+.tl-label {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 5px;
+  font-family: monospace;
+  font-size: 9px;
+  font-weight: 700;
+  height: 12px;
+  color: var(--text3);
+}
+.timeline-canvas-wrap {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+  cursor: crosshair;
+}
+.timeline-canvas-wrap canvas { display: block; width: 100%; }
+#timeline-fg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* ── Charts row ──────────────────────────────────────────────────────────── */
+.charts-row {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  min-height: 160px;
+}
+.chart-panel {
+  flex: 1;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.chart-panel + .chart-panel { border-left: 1px solid var(--border); }
+.chart-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text3);
+  margin-bottom: 6px;
+  flex-shrink: 0;
+}
+.mouse-chart-panel { flex: 2; }
+.mouse-chart-panel svg {
+  flex: 1;
+  min-height: 0;
+  display: block;
+  width: 100%;
+}
+.position-panel { flex: 1; max-width: 200px; }
+.position-canvas-wrap {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+.position-canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#position-fg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* ── Settings modal ──────────────────────────────────────────────────────── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-backdrop.hidden { display: none; }
+.modal-card {
+  background: var(--s1);
+  border: 1px solid var(--borderhi);
+  border-radius: 10px;
+  padding: 20px;
+  width: 520px;
+  max-width: 95vw;
+}
+.modal-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 16px;
+}
+.modal-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+.modal-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text3);
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.12s;
+}
+.modal-tab:hover { color: var(--text2); }
+.modal-tab.active {
+  background: var(--s3);
+  border-color: var(--border);
+  color: var(--accent);
+}
+.modal-tab-content { display: none; }
+.modal-tab-content.active { display: block; }
+.form-group { margin-bottom: 12px; }
+.form-label {
+  display: block;
+  font-size: 11px;
+  color: var(--text3);
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.form-input {
+  width: 100%;
+  background: var(--s2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-family: monospace;
+  outline: none;
+  transition: border-color 0.12s;
+}
+.form-input:focus { border-color: var(--accent); }
+.form-hint { font-size: 10px; color: var(--text3); margin-top: 4px; }
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+.btn-primary {
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  border-radius: 6px;
+  padding: 7px 16px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: opacity 0.12s;
+}
+.btn-primary:hover { opacity: 0.85; }
+.btn-secondary {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  border-radius: 6px;
+  padding: 7px 16px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.12s;
+}
+.btn-secondary:hover { border-color: var(--borderhi); color: var(--text); }
+
+.local-pick-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.local-path-display {
+  flex: 1;
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text3);
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.source-badge {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 10px;
+  color: var(--text3);
+  font-family: monospace;
+}
+.source-badge.active { border-color: var(--green); color: var(--green); }
+
+/* Utility */
+.hidden { display: none !important; }
+/* ── Single-sample mode: no sidebar (can't filter / random) ──────────────── */
+body.single-mode .sidebar { display: none; }
+
+/* ── Stage (video + on-video annotation overlay) ─────────────────────────── */
+.stage { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.stage .video-wrap {
+  flex: 1; aspect-ratio: 16/9; max-height: calc(100vh - 52px - 46px);
+  margin: 0 auto; width: 100%;
+}
+
+.input-overlay {
+  position: absolute; inset: 0; z-index: 4;
+  pointer-events: none; opacity: 0; transition: opacity .12s ease;
+}
+.input-overlay.visible { opacity: 1; }
+
+.ov-card {
+  position: absolute; top: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 36%, transparent);
+  border-radius: 7px;
+  background: rgba(10, 12, 22, 0.62);
+  box-shadow: 0 8px 26px rgba(0,0,0,0.4);
+  backdrop-filter: blur(4px);
+  padding: 8px;
+}
+
+/* All-inputs box (top-left): WASD triangle + look circle + action tiles */
+.ov-inputs { left: 14px; display: grid; gap: 9px; }
+.ov-frame { font-size: 9.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--text2); font-variant-numeric: tabular-nums; }
+.ov-frame b { color: var(--text); font-weight: 800; }
+.ov-inputs-top { display: flex; gap: 12px; align-items: center; }
+
+.wasd { display: grid; grid-template-columns: repeat(3, 30px); grid-template-rows: repeat(2, 30px); gap: 4px; }
+.k-w { grid-column: 2; grid-row: 1; }
+.k-a { grid-column: 1; grid-row: 2; }
+.k-s { grid-column: 2; grid-row: 2; }
+.k-d { grid-column: 3; grid-row: 2; }
+
+.ov-key {
+  display: grid; place-items: center; border: 1px solid var(--border); border-radius: 5px;
+  background: rgba(20,24,42,0.9); color: var(--text2); font-size: 12px; font-weight: 800; line-height: 1;
+}
+.ov-key.active {
+  border-color: color-mix(in srgb, var(--key) 90%, white);
+  background: color-mix(in srgb, var(--key) 32%, rgba(20,24,42,0.9)); color: #fff;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--key) 55%, transparent);
+}
+
+/* Action tiles (jump/walk/crouch/fall/fire) — square chips */
+.tiles { display: flex; gap: 5px; }
+.tile {
+  width: 32px; height: 32px; display: grid; place-items: center;
+  border: 1px solid var(--border); border-radius: 6px; background: rgba(20,24,42,0.9);
+  color: var(--text2); font-size: 11px; font-weight: 800; line-height: 1; text-align: center;
+}
+.tile small { display: block; font-size: 6.5px; font-weight: 700; letter-spacing: .2px; color: var(--text3); margin-top: 2px; text-transform: uppercase; }
+.tile.active {
+  border-color: color-mix(in srgb, var(--key) 90%, white);
+  background: color-mix(in srgb, var(--key) 32%, rgba(20,24,42,0.9)); color: #fff;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--key) 55%, transparent);
+}
+.tile.active small { color: #fff; opacity: .85; }
+
+/* Look circle (mouse/camera delta) — crosshair + travelling dot */
+.lookpad {
+  width: 64px; height: 64px; flex-shrink: 0; border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  background: rgba(12,15,28,0.55);
+}
+.lookpad svg { width: 100%; height: 100%; display: block; }
+.look-cross { stroke: rgba(136,146,200,0.3); stroke-width: 1; }
+.look-line  { stroke: var(--accent); stroke-width: 2.4; stroke-linecap: round; }
+.look-dot   { fill: var(--accent); }
+.look-core  { fill: rgba(221,226,245,0.7); }
+
+/* Minimap (top-right): map stage + yaw cone (on map) + pitch gauge */
+.ov-minimap {
+  right: 14px; width: 198px; height: 172px; padding: 8px;
+  display: grid; grid-template-columns: 1fr 18px; gap: 8px;
+}
+.map-stage { position: relative; border-radius: 5px; overflow: hidden; background: rgba(8,10,18,0.4); }
+.map-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.pitch-gauge { position: relative; width: 18px; }
+.pitch-track {
+  position: absolute; left: 50%; top: 9px; bottom: 9px; width: 4px; transform: translateX(-50%);
+  border-radius: 3px;
+  background: linear-gradient(rgba(123,142,247,.5), rgba(136,146,200,.14) 50%, rgba(247,110,101,.5));
+}
+.pitch-zero { position: absolute; left: 3px; right: 3px; top: 50%; height: 1px; background: rgba(136,146,200,0.55); }
+.pitch-needle {
+  position: absolute; left: 50%; top: 50%; width: 16px; height: 3px; border-radius: 2px;
+  transform: translate(-50%, -50%); background: var(--accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 65%, transparent);
+}
+.pitch-cap { position: absolute; left: 50%; transform: translateX(-50%); font-size: 7px; color: var(--text3); line-height: 1; }
+.pitch-up { top: 0; } .pitch-dn { bottom: 0; }
+
+/* Slim meta bar under the video */
+.meta-bar {
+  height: 46px; flex-shrink: 0; border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 0; background: var(--s1); overflow-x: auto;
+}
+.mb-stat { padding: 0 16px; border-right: 1px solid var(--border); white-space: nowrap; }
+.mb-label { font-size: 8.5px; letter-spacing: .5px; text-transform: uppercase; color: var(--text3); }
+.mb-value { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.2; }
+</style>
+</head>
+<body>
+
+<!-- Settings modal -->
+<div id="settings-modal" class="modal-backdrop hidden">
+  <div class="modal-card">
+    <div class="modal-title">Data Source</div>
+    <div class="modal-tabs">
+      <button class="modal-tab active" data-tab="remote">Remote URL</button>
+      <button class="modal-tab" data-tab="local">Local Folder</button>
+      <button class="modal-tab" data-tab="single">Single Sample</button>
+    </div>
+
+    <div id="tab-remote" class="modal-tab-content active">
+      <div class="form-group">
+        <label class="form-label">Dataset base URL (parquets)</label>
+        <input id="input-parquet-url" class="form-input" type="url"
+               placeholder="https://huggingface.co/datasets/RekaAI/CS2-10k/resolve/main/sample">
+        <div class="form-hint">Defaults to the CS2-10k <code style="color:var(--accent)">sample/</code> subset. Point at <code style="color:var(--accent)">…/resolve/main</code> for the full dataset, or any base that serves <code style="color:var(--accent)">index.parquet</code> + its <code style="color:var(--accent)">data/</code> clips.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Video base URL <span style="color:var(--text3);font-weight:400;text-transform:none">(leave blank to use dataset URL above)</span></label>
+        <input id="input-video-url" class="form-input" type="url"
+               placeholder="Optional separate CDN for videos">
+      </div>
+    </div>
+
+    <div id="tab-local" class="modal-tab-content">
+      <p style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.6">
+        Select the folder containing your rendered output
+        (the folder with <code style="color:var(--accent)">.parquet</code> and
+        <code style="color:var(--accent)">.mp4</code> files).
+        An <code style="color:var(--accent)">index.parquet</code> is optional — the viewer will
+        scan for parquet files automatically if one is not found.
+      </p>
+      <div class="local-pick-row">
+        <button class="btn-secondary" id="btn-pick-dir">Choose Folder</button>
+        <div class="local-path-display" id="local-path-display">No folder selected</div>
+      </div>
+      <div class="form-hint">Requires Chrome / Edge (File System Access API).</div>
+    </div>
+
+    <div id="tab-single" class="modal-tab-content">
+      <p style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.6">
+        View a single clip by selecting one <code style="color:var(--accent)">.mp4</code> and its
+        matching <code style="color:var(--accent)">.parquet</code> file directly — no index or folder
+        required. Works in any browser.
+      </p>
+      <div class="form-group">
+        <label class="form-label">Parquet file (annotations)</label>
+        <div class="local-pick-row">
+          <button class="btn-secondary" id="btn-pick-parquet">Choose .parquet</button>
+          <div class="local-path-display" id="single-parquet-display">No file selected</div>
+        </div>
+        <input id="input-single-parquet" type="file" accept=".parquet" class="hidden">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Video file <span style="color:var(--text3);font-weight:400;text-transform:none">(optional)</span></label>
+        <div class="local-pick-row">
+          <button class="btn-secondary" id="btn-pick-video">Choose .mp4</button>
+          <div class="local-path-display" id="single-video-display">No file selected</div>
+        </div>
+        <input id="input-single-video" type="file" accept="video/mp4,.mp4" class="hidden">
+        <div class="form-hint">Annotations render without a video; add the .mp4 for synced playback.</div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-secondary" id="btn-settings-cancel">Cancel</button>
+      <button class="btn-primary" id="btn-settings-apply">Apply &amp; Reload</button>
+    </div>
+  </div>
+</div>
+
+<!-- Header -->
+<header class="header">
+  <div class="header-logo">CS2-DEM-RENDERER<span> Viewer</span></div>
+  <div style="flex:1"></div>
+  <div class="header-right">
+    <span class="source-badge" id="source-badge">remote</span>
+    <button class="btn-icon" id="btn-settings" title="Source settings">⚙</button>
+  </div>
+</header>
+
+<!-- Main layout -->
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="map-filter" id="map-filter">
+      <button class="map-pill all active" data-map="all">All</button>
+      <button class="map-pill map-dust2"   data-map="dust2">dust2</button>
+      <button class="map-pill map-mirage"  data-map="mirage">mirage</button>
+      <button class="map-pill map-nuke"    data-map="nuke">nuke</button>
+      <button class="map-pill map-ancient" data-map="ancient">ancient</button>
+      <button class="map-pill map-overpass" data-map="overpass">overpass</button>
+      <button class="map-pill map-train"   data-map="train">train</button>
+      <button class="map-pill map-inferno" data-map="inferno">inferno</button>
+    </div>
+    <div class="sidebar-actions">
+      <button class="btn-full" id="btn-random">🎲&nbsp; Random clip</button>
+    </div>
+    <div class="match-tree" id="match-tree">
+      <div class="sidebar-message">Loading dataset index…<br><br>
+        <div class="spinner" style="margin:0 auto;"></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Content -->
+  <main class="content">
+
+    <!-- Empty state -->
+    <div id="empty-state" class="empty-state">
+      <div class="empty-icon">🎮</div>
+      <p>Select a clip from the sidebar</p>
+      <small>or hit <b>🎲 Random clip</b> to explore</small>
+    </div>
+
+    <!-- Viewer (hidden until clip loaded) -->
+    <div id="viewer" class="viewer hidden">
+      <div class="stage">
+        <div class="video-wrap">
+          <video id="video" controls playsinline></video>
+
+          <!-- Annotation overlay -->
+          <div class="input-overlay visible" id="input-overlay" aria-hidden="false">
+            <!-- All player input, one box: WASD triangle + look circle + action tiles -->
+            <div class="ov-card ov-inputs">
+              <div class="ov-frame" id="ov-frame">Frame 0 / 0</div>
+              <div class="ov-inputs-top">
+                <div class="wasd" id="ov-wasd"></div>
+                <div class="lookpad">
+                  <svg id="ov-dir" viewBox="0 0 100 100" aria-label="Mouse / camera movement"></svg>
+                </div>
+              </div>
+              <div class="tiles" id="ov-tiles"></div>
+            </div>
+
+            <!-- Minimap with yaw cone + pitch gauge -->
+            <div class="ov-card ov-minimap">
+              <div class="map-stage">
+                <canvas id="position-bg"></canvas>
+                <canvas id="position-fg"></canvas>
+              </div>
+              <div class="pitch-gauge" title="Look pitch">
+                <div class="pitch-track"></div>
+                <div class="pitch-zero"></div>
+                <div class="pitch-needle" id="ov-pitch-needle"></div>
+                <span class="pitch-cap pitch-up">▲</span>
+                <span class="pitch-cap pitch-dn">▼</span>
+              </div>
+            </div>
+          </div>
+
+          <div id="video-loading" class="video-overlay hidden">
+            <div class="spinner"></div> Loading…
+          </div>
+        </div>
+
+        <!-- Slim metadata bar -->
+        <div class="meta-bar" id="meta-bar"></div>
+      </div>
+    </div><!-- /viewer -->
+  </main>
+</div>
+
+<script type="module">
+import { parquetRead, parquetMetadata, asyncBufferFromUrl } from 'https://esm.sh/hyparquet@1.9.0'
+
+// ── Constants ──────────────────────────────────────────────────────────────
+// Default remote dataset base. Points at the CS2-10k sample subset on Hugging
+// Face (3 full matches across dust2/mirage/ancient) so the viewer shows live
+// data on first load. Use ⚙ Source settings to point at a local folder, a
+// single clip, or the full dataset instead.
+const DEFAULT_PARQUET_URL = 'https://huggingface.co/datasets/RekaAI/CS2-10k/resolve/main/sample'
+const LS_KEY = 'cs2viewer_source'
+
+const KEY_ORDER  = ['W','A','S','D','J','C','R','V','[']
+const KEY_COLORS = {
+  W:'#4cc87a', A:'#4cc87a', S:'#4cc87a', D:'#4cc87a',
+  J:'#7b8ef7', C:'#ffa04c', R:'#f76e65',
+  V:'#38d9c9', '['  :'#f76e65',
+}
+const MAP_COLORS = {
+  dust2:'#c89220', mirage:'#e8743b', nuke:'#4cc87a', ancient:'#c084fc',
+  overpass:'#7b8ef7', train:'#8892c8', inferno:'#f76e65', anubis:'#f0c040',
+  unknown:'#535d8a',
+}
+const MOUSE_PAD = {top:22, right:16, bottom:24, left:46}
+
+// ── State ──────────────────────────────────────────────────────────────────
+const S = {
+  sourceType: 'remote',   // 'remote' | 'local' | 'single'
+  parquetBase: DEFAULT_PARQUET_URL,
+  videoBase: '',          // empty = same as parquetBase
+  dirHandle: null,        // FileSystemDirectoryHandle
+  index: [],              // parsed index.parquet rows
+  matchMap: new Map(),    // match_id → { map, clips: [row,…] }
+  filteredMap: 'all',
+  expandedMatches: new Set(),
+  selectedRow: null,
+  clipData: null,         // { fps, frames, map, round_number, team, player_index, … }
+  localVideoURL: null,    // revocable object URL for local video
+  svgState: null,         // { cw, ch, frameCount, totalTime }
+  posState: null,         // { xMin, yMin, xRange, yRange, PAD, cw, ch }
+  singleParquetFile: null, // single-sample mode: File object for the parquet
+  singleVideoFile: null,   // single-sample mode: File object for the video (optional)
+}
+
+// ── Path helpers ─────────────────────────────────────────────────────────────
+// Resolve an index row to its parquet / video relative paths, tolerating both
+// the published index.parquet schema (video_path, parquet_path) and the legacy
+// directory-scan schema (clip_path).
+function rowParquetPath(row) {
+  return row.parquet_path || row.clip_path ||
+    (row.video_path ? row.video_path.replace(/\.mp4$/i, '.parquet') : null)
+}
+function rowVideoPath(row) {
+  return row.video_path ||
+    (row.clip_path ? row.clip_path.replace(/\.parquet$/i, '.mp4') : null)
+}
+
+// ── Persistence ────────────────────────────────────────────────────────────
+function loadPersistedSource() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}')
+    if (saved.parquetBase) S.parquetBase = saved.parquetBase
+    if (saved.videoBase)   S.videoBase   = saved.videoBase
+    // Note: sourceType 'local' can't persist (dirHandle not serializable)
+  } catch {}
+}
+
+function persistSource() {
+  if (S.sourceType === 'remote') {
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      parquetBase: S.parquetBase,
+      videoBase: S.videoBase,
+    }))
+  }
+}
+
+// ── Parquet helpers ────────────────────────────────────────────────────────
+async function readParquetFromUrl(url) {
+  const ab = await asyncBufferFromUrl({ url })
+  return new Promise((resolve, reject) => {
+    parquetRead({ file: ab, rowFormat: 'object', onComplete: resolve })
+      .catch(reject)
+  })
+}
+
+async function readParquetFromFile(file) {
+  const ab = await file.arrayBuffer()
+  return new Promise((resolve, reject) => {
+    parquetRead({ file: ab, rowFormat: 'object', onComplete: resolve })
+      .catch(reject)
+  })
+}
+
+async function getLocalFile(relPath) {
+  const parts = relPath.split('/')
+  let handle = S.dirHandle
+  for (let i = 0; i < parts.length - 1; i++) {
+    handle = await handle.getDirectoryHandle(parts[i])
+  }
+  return (await handle.getFileHandle(parts[parts.length - 1])).getFile()
+}
+
+// ── Index loading ──────────────────────────────────────────────────────────
+async function loadIndex() {
+  // Single-sample mode hides the sidebar (no map filter / random clip there).
+  document.body.classList.toggle('single-mode', S.sourceType === 'single')
+  // Single-sample mode has no index — it's driven entirely by the two picked files.
+  if (S.sourceType === 'single') {
+    await loadSingleSample()
+    return
+  }
+  if (S.sourceType === 'remote' && !S.parquetBase) {
+    showMatchTreeMessage('No data source configured.<br><br>Open <b>⚙ Source settings</b> to point at a remote dataset URL, a local folder, or a single sample.')
+    return
+  }
+  if (S.sourceType === 'local' && !S.dirHandle) {
+    showMatchTreeMessage('No folder selected.<br><br>Open <b>⚙ Source settings</b> → Local Folder.')
+    return
+  }
+  showMatchTreeMessage('<div class="spinner" style="margin:0 auto 8px"></div>Loading index…')
+  try {
+    let rows
+    if (S.sourceType === 'remote') {
+      rows = await readParquetFromUrl(`${S.parquetBase}/index.parquet`)
+      S.index = rows
+      buildMatchMap(rows)
+      renderSidebar()
+      updateHeaderStats()
+    } else {
+      // Try index.parquet first; fall back to scanning the directory for parquet files.
+      try {
+        const file = await getLocalFile('index.parquet')
+        rows = await readParquetFromFile(file)
+        S.index = rows
+        buildMatchMap(rows)
+        renderSidebar()
+        updateHeaderStats()
+      } catch (_) {
+        await scanDirectoryForParquets()
+      }
+    }
+  } catch (err) {
+    showMatchTreeMessage(`<span style="color:var(--red)">Failed to load index:<br>${err.message}</span>`)
+  }
+  // Auto-open the first clip so the viewer shows live data instead of an empty
+  // screen on load. Skipped if a clip is already selected or nothing loaded.
+  if (S.sourceType !== 'single' && !S.selectedRow && S.matchMap.size) {
+    autoSelectFirstClip()
+  }
+}
+
+// Select the first clip of the first (filter-respecting) match.
+function autoSelectFirstClip() {
+  const matches = filteredMatches()
+  if (!matches.length) return
+  const [mid, m] = matches[0]
+  if (!m.clips.length) return
+  S.expandedMatches.add(mid)
+  renderSidebar()
+  selectClip(m.clips[0])
+}
+
+// scanDirectoryForParquets builds the index by reading metadata from each .parquet file
+// in the local directory. Used as a fallback when index.parquet is absent.
+// Recurses into subdirectories so it handles the published HF layout
+// (data/<match_id>/<uuid>.parquet) as well as a flat folder of clips.
+// Reads only lightweight metadata columns (not frame_data) for speed.
+async function scanDirectoryForParquets() {
+  showMatchTreeMessage('<div class="spinner" style="margin:0 auto 8px"></div>Scanning parquets…')
+  const rows = []
+  const metaCols = ['match_name', 'match_id', 'map', 'round_number', 'team',
+                    'steam_id', 'player_index', 'total_time', 'fps', 'width', 'height']
+  let scanned = 0
+
+  // Recursively collect parquet file paths (relative to the chosen directory).
+  async function* walk(handle, prefix) {
+    for await (const entry of handle.values()) {
+      const relPath = prefix ? `${prefix}/${entry.name}` : entry.name
+      if (entry.kind === 'directory') {
+        yield* walk(entry, relPath)
+      } else if (entry.name.endsWith('.parquet') && entry.name !== 'index.parquet') {
+        yield { entry, relPath }
+      }
+    }
+  }
+
+  let discovered = 0
+  let firstError = ''
+  for await (const { entry, relPath } of walk(S.dirHandle, '')) {
+    discovered++
+    try {
+      const file = await entry.getFile()
+      const ab = await file.arrayBuffer()
+      // Only request columns this file actually has — schemas vary (the renderer
+      // writes match_name/steam_id; the published dataset uses match_id/player_index).
+      // Requesting a missing column makes parquetRead throw, which would skip the file.
+      const available = new Set(parquetMetadata(ab).schema.map(s => s.name))
+      const cols = metaCols.filter(c => available.has(c))
+      const readWith = opts => new Promise((resolve, reject) =>
+        parquetRead({ file: ab, rowFormat: 'object', onComplete: resolve, ...opts }).catch(reject))
+      let clipRows
+      try {
+        clipRows = await readWith({ columns: cols })
+      } catch (projErr) {
+        // Some files/encodings reject a projected read — record why, then read all columns.
+        if (!firstError) firstError = `${relPath} (projected read): ${projErr && projErr.message ? projErr.message : projErr}`
+        clipRows = await readWith({})
+      }
+      if (!clipRows || !clipRows.length) continue
+      const r = clipRows[0]
+      const parquetPath = relPath
+      const videoPath = relPath.replace(/\.parquet$/i, '.mp4')
+      // Derive match_id from the parent directory (data/<match_id>/…) when the
+      // parquet doesn't carry one; fall back to the file stem.
+      const parts = relPath.split('/')
+      const parentDir = parts.length > 1 ? parts[parts.length - 2] : ''
+      const stem = parts[parts.length - 1].slice(0, -'.parquet'.length)
+      // Use Number(), not unary +: int64 columns (e.g. player_index) come back as
+      // BigInt from hyparquet, and +bigint throws "Cannot convert a BigInt value to a number".
+      rows.push({
+        match_id:     r.match_id || r.match_name || parentDir || stem,
+        map:          r.map || 'unknown',
+        parquet_path: parquetPath,
+        video_path:   videoPath,
+        round_number: Number(r.round_number || 0),
+        // Keep null when absent so we can reconstruct it from steam_id below.
+        player_index: r.player_index != null ? Number(r.player_index) : null,
+        steam_id:     r.steam_id != null ? String(r.steam_id) : null,
+        team:         Number(r.team || 0),
+        total_time:   Number(r.total_time || 0),
+      })
+      scanned++
+      if (scanned % 20 === 0) {
+        showMatchTreeMessage(`<div class="spinner" style="margin:0 auto 8px"></div>Scanned ${scanned} clips…`)
+      }
+    } catch (e) {
+      if (!firstError) firstError = `${relPath}: ${e && e.message ? e.message : e}`
+      console.warn(`skipped ${relPath}:`, e)
+    }
+  }
+
+  if (!rows.length) {
+    const msg = discovered === 0
+      ? 'No .parquet files found in this folder<br>(searched subfolders too).'
+      : `Found ${discovered} .parquet file(s) but none could be read.<br><span style="color:var(--red);font-size:11px">${firstError}</span>`
+    showMatchTreeMessage(msg)
+    return
+  }
+
+  // Reconstruct player_index for clips that lacked the column (raw renderer
+  // output has steam_id but no player_index). Rank distinct steam_ids within
+  // each match — the same definition cleanup_parquets.py uses — which also
+  // yields correct indices for matches with more than 10 players.
+  const sidsByMatch = new Map()
+  for (const row of rows) {
+    if (row.player_index === null && row.steam_id) {
+      if (!sidsByMatch.has(row.match_id)) sidsByMatch.set(row.match_id, new Set())
+      sidsByMatch.get(row.match_id).add(row.steam_id)
+    }
+  }
+  const indexMaps = new Map()
+  for (const [mid, sids] of sidsByMatch) {
+    const sorted = [...sids].sort()
+    indexMaps.set(mid, new Map(sorted.map((s, i) => [s, i])))
+  }
+  for (const row of rows) {
+    if (row.player_index === null) {
+      row.player_index = (row.steam_id && indexMaps.get(row.match_id)?.get(row.steam_id)) ?? 0
+    }
+  }
+
+  S.index = rows
+  buildMatchMap(rows)
+  renderSidebar()
+  updateHeaderStats()
+}
+
+// updateHeaderStats refreshes the pill counts in the header from loaded index data.
+function updateHeaderStats() {
+  const totalClips = S.index.length
+  const totalMatches = S.matchMap.size
+  const maps = new Set(S.index.map(r => r.map).filter(m => m && m !== 'unknown'))
+  updateMapFilterVisibility(maps)
+  const secs = S.index.reduce((a, r) => a + (r.total_time || 0), 0)
+  const hours = secs / 3600
+  const el = document.querySelector('.header-stats')
+  if (!el) return
+  el.innerHTML = `
+    <span class="stat-pill"><b>${hours >= 1 ? hours.toLocaleString(undefined, {maximumFractionDigits: 0}) : hours.toFixed(1)}</b> hours</span>
+    <span class="stat-pill"><b>${totalClips.toLocaleString()}</b> clips</span>
+    <span class="stat-pill"><b>${totalMatches.toLocaleString()}</b> matches</span>
+    <span class="stat-pill"><b>${maps.size}</b> maps</span>
+  `
+}
+
+// Show a map's filter pill only if that map appears in the loaded dataset.
+// The "All" pill is always shown. If the active filter points at a map that's
+// no longer present, fall back to "All".
+function updateMapFilterVisibility(maps) {
+  document.querySelectorAll('.map-pill').forEach(pill => {
+    const m = pill.dataset.map
+    pill.style.display = (m === 'all' || maps.has(m)) ? '' : 'none'
+  })
+  if (S.filteredMap !== 'all' && !maps.has(S.filteredMap)) {
+    S.filteredMap = 'all'
+    document.querySelectorAll('.map-pill').forEach(p => p.classList.remove('active'))
+    document.querySelector('.map-pill.all')?.classList.add('active')
+  }
+}
+
+function buildMatchMap(rows) {
+  S.matchMap.clear()
+  for (const row of rows) {
+    const mid = row.match_id
+    if (!S.matchMap.has(mid)) {
+      S.matchMap.set(mid, { map: row.map, clips: [] })
+    }
+    S.matchMap.get(mid).clips.push(row)
+  }
+  // Sort clips within each match by round, then player_index. Rounds may have
+  // fewer than 10 player clips (some videos were removed) and matches may have
+  // more than 10 players (substitutions) — sorting keeps the list coherent
+  // regardless of how many clips a given round contributes.
+  for (const m of S.matchMap.values()) {
+    m.clips.sort((a, b) =>
+      (a.round_number - b.round_number) || (a.player_index - b.player_index))
+  }
+}
+
+// ── Single-sample mode ───────────────────────────────────────────────────────
+// Drives the viewer from a single picked .parquet (+ optional .mp4), with no
+// index or directory. selectClip reads all metadata from the parquet itself.
+async function loadSingleSample() {
+  if (!S.singleParquetFile) {
+    showMatchTreeMessage('No sample loaded.<br><br>Open <b>⚙ Source settings</b> → Single Sample and choose a .parquet file.')
+    return
+  }
+  const pName = S.singleParquetFile.name
+  const vName = S.singleVideoFile ? S.singleVideoFile.name : null
+  document.getElementById('match-tree').innerHTML = `
+    <div style="padding:8px 10px">
+      <div class="clip-row selected" id="single-clip-row">
+        <span class="clip-name" style="overflow:hidden;text-overflow:ellipsis">${pName}</span>
+      </div>
+      ${vName ? `<div class="sidebar-message" style="padding:8px 10px;text-align:left">🎬 ${vName}</div>`
+              : `<div class="sidebar-message" style="padding:8px 10px;text-align:left;color:var(--orange)">No video — annotations only</div>`}
+    </div>`
+  const row = {
+    single: true,
+    match_id: 'single',
+    map: 'unknown',
+    round_number: 0,
+    player_index: 0,
+    team: 0,
+    parquetFile: S.singleParquetFile,
+    videoFile: S.singleVideoFile,
+  }
+  document.getElementById('single-clip-row')?.addEventListener('click', () => selectClip(row))
+  await selectClip(row)
+}
+
+// ── Sidebar rendering ──────────────────────────────────────────────────────
+function showMatchTreeMessage(html) {
+  document.getElementById('match-tree').innerHTML = `<div class="sidebar-message">${html}</div>`
+}
+
+function filteredMatches() {
+  if (S.filteredMap === 'all') return [...S.matchMap.entries()]
+  return [...S.matchMap.entries()].filter(([, v]) => v.map === S.filteredMap)
+}
+
+function renderSidebar() {
+  const tree = document.getElementById('match-tree')
+  const matches = filteredMatches()
+  if (!matches.length) {
+    showMatchTreeMessage('No matches for this map.')
+    return
+  }
+
+  tree.innerHTML = ''
+  for (const [mid, { map, clips }] of matches) {
+    const isExpanded = S.expandedMatches.has(mid)
+    const color = MAP_COLORS[map] || MAP_COLORS.unknown
+
+    // Sort in place (same array the click handler indexes into) so clips group by
+    // round, then team (CT before T), then player.
+    clips.sort((a, b) =>
+      (Number(a.round_number) || 0) - (Number(b.round_number) || 0) ||
+      (Number(a.team) || 0) - (Number(b.team) || 0) ||
+      (Number(a.player_index) || 0) - (Number(b.player_index) || 0))
+
+    const item = document.createElement('div')
+    item.className = 'match-item'
+    item.innerHTML = `
+      <div class="match-header" data-mid="${mid}">
+        <span class="match-expand">${isExpanded ? '▾' : '▸'}</span>
+        <span class="match-map-dot" style="background:${color}"></span>
+        <span class="match-name" title="${mid}">${mid}</span>
+        <span class="match-count">${clips.length}</span>
+      </div>
+      <div class="clip-list ${isExpanded ? 'open' : ''}" data-mid="${mid}">
+        ${clips.map((clip, i) => {
+          const isSel = S.selectedRow && rowParquetPath(S.selectedRow) === rowParquetPath(clip)
+          const team = clip.team === 1 ? 'CT' : 'T'  // 0 = T, 1 = CT
+          const dur = clip.total_time ? clip.total_time.toFixed(0) + 's' : ''
+          const prev = clips[i - 1]
+          const newGroup = i > 0 && (prev.round_number !== clip.round_number || prev.team !== clip.team)
+          return `<div class="clip-row ${isSel ? 'selected' : ''} ${newGroup ? 'group-start' : ''}" data-clip="${i}" data-mid="${mid}">
+            <span class="clip-name">Round ${clip.round_number} · Player ${clip.player_index}</span>
+            <span class="clip-team team-${clip.team === 1 ? 'ct' : 't'}">${team}</span>
+            <span class="clip-dur">${dur}</span>
+          </div>`
+        }).join('')}
+      </div>`
+
+    item.querySelector('.match-header').addEventListener('click', () => toggleMatch(mid))
+    item.querySelectorAll('.clip-row').forEach((el) => {
+      const i = +el.dataset.clip
+      const midKey = el.dataset.mid
+      el.addEventListener('click', () => selectClip(S.matchMap.get(midKey).clips[i]))
+    })
+    tree.appendChild(item)
+  }
+}
+
+function toggleMatch(mid) {
+  if (S.expandedMatches.has(mid)) S.expandedMatches.delete(mid)
+  else S.expandedMatches.add(mid)
+  renderSidebar()
+}
+
+// ── Map filter ─────────────────────────────────────────────────────────────
+document.getElementById('map-filter').addEventListener('click', (e) => {
+  const pill = e.target.closest('.map-pill')
+  if (!pill) return
+  document.querySelectorAll('.map-pill').forEach(p => p.classList.remove('active'))
+  pill.classList.add('active')
+  S.filteredMap = pill.dataset.map
+  renderSidebar()
+})
+
+// ── Clip selection ─────────────────────────────────────────────────────────
+async function selectClip(row) {
+  S.selectedRow = row
+  if (S.sourceType !== 'single') renderSidebar()
+
+  showViewer()
+  showVideoLoading(true)
+  clearAnnotations()
+
+  try {
+    // Load clip parquet
+    let clipRows
+    if (S.sourceType === 'single') {
+      clipRows = await readParquetFromFile(row.parquetFile)
+    } else if (S.sourceType === 'remote') {
+      clipRows = await readParquetFromUrl(`${S.parquetBase}/${rowParquetPath(row)}`)
+    } else {
+      const file = await getLocalFile(rowParquetPath(row))
+      clipRows = await readParquetFromFile(file)
+    }
+
+    const r = clipRows[0]
+    let frames = r.frame_data
+    if (typeof frames === 'string') {
+      try { frames = JSON.parse(frames) } catch { frames = [] }
+    }
+    if (!Array.isArray(frames)) frames = []
+
+    // Support both the index.parquet schema (match_id, player_index) and the
+    // renderer's direct parquet schema (match_name, steam_id, no player_index).
+    // Number(), not +: int64 columns come back as BigInt and +bigint throws.
+    const playerIdx = r.player_index != null
+      ? Number(r.player_index)
+      : (row.player_index != null ? Number(row.player_index) : 0)
+    S.clipData = {
+      map:          r.map          || row.map || 'unknown',
+      match_id:     r.match_id     || r.match_name || row.match_id,
+      player_index: playerIdx,
+      // Prefer the index/manifest round_number. The published per-clip parquets
+      // were rendered before the freezetime double-count fix (see parse.go), so
+      // their round_number is ~2x the true round (even-only or odd-only); the
+      // index carries the corrected sequential round. Single-file mode has no
+      // index row, so fall back to the per-clip value there.
+      round_number: Number((!row.single && row.round_number != null) ? row.round_number : (r.round_number ?? 0)),
+      team:         Number(r.team != null ? r.team : (row.team || 0)),
+      fps:          Number(r.fps || 48),
+      total_time:   Number(r.total_time || frames.length / 48),
+      width:        Number(r.width || 1280),
+      height:       Number(r.height || 720),
+      frames,
+    }
+
+    renderMeta()
+    setupOverlay(frames)
+
+    // Load video
+    if (S.localVideoURL) {
+      URL.revokeObjectURL(S.localVideoURL)
+      S.localVideoURL = null
+    }
+    const vid = document.getElementById('video')
+    if (S.sourceType === 'single') {
+      if (row.videoFile) {
+        S.localVideoURL = URL.createObjectURL(row.videoFile)
+        vid.src = S.localVideoURL
+      } else {
+        vid.removeAttribute('src')   // annotations-only: no video provided
+        vid.load()
+      }
+    } else if (S.sourceType === 'local') {
+      const file = await getLocalFile(rowVideoPath(row))
+      S.localVideoURL = URL.createObjectURL(file)
+      vid.src = S.localVideoURL
+    } else {
+      const vbase = S.videoBase || S.parquetBase
+      vid.src = `${vbase}/${rowVideoPath(row)}`
+    }
+    vid.load()
+    showVideoLoading(false)
+    if (vid.src) vid.play().catch(() => {})
+  } catch (err) {
+    showVideoLoading(false)
+    console.error('selectClip failed:', err)
+  }
+}
+
+// ── Random clip ────────────────────────────────────────────────────────────
+document.getElementById('btn-random').addEventListener('click', () => {
+  const matches = filteredMatches()
+  if (!matches.length) return
+  const [, { clips }] = matches[Math.floor(Math.random() * matches.length)]
+  const row = clips[Math.floor(Math.random() * clips.length)]
+  // Expand the match
+  S.expandedMatches.add(row.match_id)
+  selectClip(row)
+})
+
+// ── Metadata bar ────────────────────────────────────────────────────────────
+function renderMeta() {
+  const cd = S.clipData
+  if (!cd) return
+  const mapColor = MAP_COLORS[cd.map] || MAP_COLORS.unknown
+  // Encoding: 0 = Terrorist, 1 = Counter-Terrorist (matches teamUint in the renderer).
+  const teamLabel = cd.team === 1 ? 'CT' : 'T'
+  const teamColor = cd.team === 1 ? 'var(--accent)' : 'var(--red)'
+  const stats = [
+    ['Map',       `<span style="color:${mapColor}">${cd.map}</span>`],
+    ['Round',     cd.round_number],
+    ['Team',      `<span style="color:${teamColor}">${teamLabel}</span>`],
+    ['Player',    `#${cd.player_index}`],
+    ['Duration',  `${cd.total_time.toFixed(1)}s`],
+    ['FPS · Res', `${cd.fps} · ${cd.width}×${cd.height}`],
+  ]
+  document.getElementById('meta-bar').innerHTML = stats.map(([l, v]) =>
+    `<div class="mb-stat"><div class="mb-label">${l}</div><div class="mb-value">${v}</div></div>`
+  ).join('')
+}
+
+// ── Annotation overlay ──────────────────────────────────────────────────────
+// Our action chars (W A S D J C R V [) laid out as a WASD-style on-video HUD.
+const WASD = [
+  { k:'W', id:'W', cls:'k-w' },
+  { k:'A', id:'A', cls:'k-a' },
+  { k:'S', id:'S', cls:'k-s' },
+  { k:'D', id:'D', cls:'k-d' },
+]
+const TILES = [
+  { k:'J', id:'J',    label:'jump'   },
+  { k:'R', id:'R',    label:'walk'   },
+  { k:'C', id:'C',    label:'crouch' },
+  { k:'V', id:'V',    label:'fall'   },
+  { k:'[', id:'FIRE', label:'fire', glyph:'M1' },
+]
+const ALL_KEYS = [...WASD, ...TILES]
+
+function buildKeypad() {
+  document.getElementById('ov-wasd').innerHTML = WASD.map(d =>
+    `<div class="ov-key ${d.cls}" id="ovk-${d.id}" style="--key:${KEY_COLORS[d.k]}">${d.k}</div>`
+  ).join('')
+  document.getElementById('ov-tiles').innerHTML = TILES.map(d =>
+    `<div class="tile" id="ovk-${d.id}" style="--key:${KEY_COLORS[d.k]}">${d.glyph || d.k}<small>${d.label}</small></div>`
+  ).join('')
+}
+
+// Build per-clip overlay state (position bounds + delta scale) and draw static layers.
+function setupOverlay(frames) {
+  buildKeypad()
+  const pxA    = frames.map(f => +(f.position_x ?? f.px ?? 0))
+  const pyA    = frames.map(f => +(f.position_y ?? f.py ?? 0))
+  const mxA    = frames.map(f => +(f.mouse_x_delta ?? f.mx ?? 0))
+  const myA    = frames.map(f => +(f.mouse_y_delta ?? f.my ?? 0))
+  const yawA   = frames.map(f => +(f.rotation_yaw   ?? 0))
+  const pitchA = frames.map(f => +(f.rotation_pitch ?? 0))
+  S.ov = {
+    pxA, pyA, mxA, myA, yawA, pitchA,
+    xMin: Math.min(...pxA), xMax: Math.max(...pxA),
+    yMin: Math.min(...pyA), yMax: Math.max(...pyA),
+    maxDelta: Math.max(1, ...mxA.map(Math.abs), ...myA.map(Math.abs)),
+  }
+  drawMinimapTrail()
+  updateOverlay(0)
+}
+
+// Minimap projection: square, equal world units/px on both axes, centred + padded.
+function minimapProj() {
+  const o = S.ov
+  const bg = document.getElementById('position-bg')
+  const W = bg.clientWidth || 156, H = bg.clientHeight || 156
+  const PAD = 12
+  const span = Math.max(o.xMax - o.xMin, o.yMax - o.yMin, 1)
+  const cx = (o.xMin + o.xMax) / 2, cy = (o.yMin + o.yMax) / 2
+  const scale = (Math.min(W, H) - PAD * 2) / span
+  return {
+    W, H,
+    toX: x => W / 2 + (x - cx) * scale,
+    toY: y => H / 2 - (y - cy) * scale,   // world +y (north) → screen up
+  }
+}
+
+function drawMinimapTrail() {
+  if (!S.ov) return
+  const o = S.ov
+  const bg = document.getElementById('position-bg')
+  const fg = document.getElementById('position-fg')
+  const m = minimapProj()
+  for (const c of [bg, fg]) { c.width = m.W; c.height = m.H }
+  const ctx = bg.getContext('2d')
+  ctx.clearRect(0, 0, m.W, m.H)
+  const n = o.pxA.length
+  for (let i = 1; i < n; i++) {
+    const t = i / n
+    ctx.beginPath()
+    ctx.moveTo(m.toX(o.pxA[i-1]), m.toY(o.pyA[i-1]))
+    ctx.lineTo(m.toX(o.pxA[i]),   m.toY(o.pyA[i]))
+    ctx.strokeStyle = `hsl(${210 - t * 50}, 70%, ${42 + t * 16}%)`
+    ctx.lineWidth = 1.4
+    ctx.stroke()
+  }
+  if (n) {
+    ctx.beginPath()
+    ctx.arc(m.toX(o.pxA[0]), m.toY(o.pyA[0]), 3.5, 0, Math.PI * 2)
+    ctx.fillStyle = '#4cc87a'
+    ctx.fill()
+  }
+}
+
+// Look circle: crosshair + a dot that travels from centre by this frame's mouse delta.
+function renderLookpad(dx, dy, maxDelta) {
+  const R = 40
+  const ex = 50 + Math.max(-42, Math.min(42, (dx / maxDelta) * R))
+  const ey = 50 + Math.max(-42, Math.min(42, (dy / maxDelta) * R))
+  const moving = Math.hypot(ex - 50, ey - 50) > 1.4
+  document.getElementById('ov-dir').innerHTML =
+    `<line class="look-cross" x1="50" y1="9" x2="50" y2="91"></line>` +
+    `<line class="look-cross" x1="9" y1="50" x2="91" y2="50"></line>` +
+    (moving ? `<line class="look-line" x1="50" y1="50" x2="${ex.toFixed(1)}" y2="${ey.toFixed(1)}"></line>` : '') +
+    (moving ? `<circle class="look-dot" cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="4"></circle>` : '') +
+    `<circle class="look-core" cx="50" cy="50" r="2.4"></circle>`
+}
+
+// Minimap player dot + facing cone (camera yaw).
+function drawMinimapDot(x, y, yaw) {
+  const fg = document.getElementById('position-fg')
+  if (!fg.width || !S.ov) return
+  const m = minimapProj()
+  const ctx = fg.getContext('2d')
+  ctx.clearRect(0, 0, m.W, m.H)
+  const px = m.toX(x), py = m.toY(y)
+  // yaw is degrees CCW from world +x; screen y is inverted ⇒ screen angle = -yaw.
+  const a = -yaw * Math.PI / 180
+  const half = 30 * Math.PI / 180, len = 26
+  ctx.beginPath()
+  ctx.moveTo(px, py)
+  ctx.lineTo(px + Math.cos(a - half) * len, py + Math.sin(a - half) * len)
+  ctx.lineTo(px + Math.cos(a + half) * len, py + Math.sin(a + half) * len)
+  ctx.closePath()
+  ctx.fillStyle = 'rgba(240,192,64,0.22)'
+  ctx.strokeStyle = 'rgba(255,226,121,0.8)'
+  ctx.lineWidth = 1.2
+  ctx.fill(); ctx.stroke()
+  ctx.beginPath()
+  ctx.arc(px, py, 4.5, 0, Math.PI * 2)
+  ctx.fillStyle = '#f0c040'
+  ctx.fill()
+  ctx.strokeStyle = '#ffffffcc'; ctx.lineWidth = 1.4; ctx.stroke()
+}
+
+// Per-frame overlay update.
+function updateOverlay(fi) {
+  if (!S.ov || !S.clipData) return
+  const o = S.ov
+  const frames = S.clipData.frames
+  fi = Math.max(0, Math.min(fi, frames.length - 1))
+  const f = frames[fi]
+  if (!f) return
+  const acts = f.actions || f.a || ''
+
+  const fc = document.getElementById('ov-frame')
+  if (fc) fc.innerHTML = `Frame <b>${fi + 1}</b> / ${frames.length}`
+
+  for (const d of ALL_KEYS) {
+    const el = document.getElementById(`ovk-${d.id}`)
+    if (el) el.classList.toggle('active', acts.includes(d.k))
+  }
+
+  const yaw = o.yawA[fi] || 0, pitch = o.pitchA[fi] || 0
+  renderLookpad(o.mxA[fi] || 0, o.myA[fi] || 0, o.maxDelta)
+  drawMinimapDot(o.pxA[fi], o.pyA[fi], yaw)
+
+  // Pitch gauge needle: −90° (up) → top, +90° (down) → bottom.
+  const needle = document.getElementById('ov-pitch-needle')
+  if (needle) needle.style.top = Math.max(3, Math.min(97, (pitch + 90) / 180 * 100)).toFixed(1) + '%'
+}
+
+// ── Video sync ─────────────────────────────────────────────────────────────
+const video = document.getElementById('video')
+let rafId = null
+
+function syncOverlay() {
+  if (!S.clipData) return
+  updateOverlay(Math.floor(video.currentTime * S.clipData.fps))
+}
+function rafLoop() { syncOverlay(); rafId = requestAnimationFrame(rafLoop) }
+function stopRaf() { if (rafId) { cancelAnimationFrame(rafId); rafId = null } }
+
+video.addEventListener('play',  () => { if (!rafId) rafLoop() })
+video.addEventListener('pause', () => { stopRaf(); syncOverlay() })
+video.addEventListener('ended', () => { stopRaf(); syncOverlay() })
+video.addEventListener('seeked', syncOverlay)
+video.addEventListener('timeupdate', syncOverlay)
+video.addEventListener('loadeddata', () => { drawMinimapTrail(); syncOverlay() })
+
+// ── UI helpers ─────────────────────────────────────────────────────────────
+function showViewer() {
+  document.getElementById('empty-state').classList.add('hidden')
+  document.getElementById('viewer').classList.remove('hidden')
+}
+
+function showVideoLoading(show) {
+  document.getElementById('video-loading').classList.toggle('hidden', !show)
+}
+
+function clearAnnotations() {
+  S.ov = null
+  for (const d of (typeof ALL_KEYS !== 'undefined' ? ALL_KEYS : [])) {
+    const el = document.getElementById(`ovk-${d.id}`)
+    if (el) el.classList.remove('active')
+  }
+  ;['position-bg','position-fg'].forEach(id => {
+    const c = document.getElementById(id)
+    if (c && c.width) c.getContext('2d').clearRect(0,0,c.width,c.height)
+  })
+}
+
+// ── Settings modal ─────────────────────────────────────────────────────────
+const modal = document.getElementById('settings-modal')
+
+document.getElementById('btn-settings').addEventListener('click', () => {
+  document.getElementById('input-parquet-url').value = S.parquetBase
+  document.getElementById('input-video-url').value   = S.videoBase
+  modal.classList.remove('hidden')
+})
+document.getElementById('btn-settings-cancel').addEventListener('click', () => {
+  modal.classList.add('hidden')
+})
+modal.addEventListener('click', (e) => {
+  if (e.target === modal) modal.classList.add('hidden')
+})
+
+// Tab switching
+document.querySelectorAll('.modal-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'))
+    document.querySelectorAll('.modal-tab-content').forEach(t => t.classList.remove('active'))
+    tab.classList.add('active')
+    document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active')
+  })
+})
+
+// Local folder picker
+document.getElementById('btn-pick-dir').addEventListener('click', async () => {
+  if (!window.showDirectoryPicker) {
+    alert('File System Access API is not supported in this browser.\nUse Chrome or Edge.')
+    return
+  }
+  try {
+    S.dirHandle = await window.showDirectoryPicker()
+    document.getElementById('local-path-display').textContent = S.dirHandle.name
+  } catch {}
+})
+
+// Single-sample file pickers (plain file inputs — work in any browser)
+document.getElementById('btn-pick-parquet').addEventListener('click', () =>
+  document.getElementById('input-single-parquet').click())
+document.getElementById('input-single-parquet').addEventListener('change', (e) => {
+  S.singleParquetFile = e.target.files[0] || null
+  document.getElementById('single-parquet-display').textContent =
+    S.singleParquetFile ? S.singleParquetFile.name : 'No file selected'
+})
+document.getElementById('btn-pick-video').addEventListener('click', () =>
+  document.getElementById('input-single-video').click())
+document.getElementById('input-single-video').addEventListener('change', (e) => {
+  S.singleVideoFile = e.target.files[0] || null
+  document.getElementById('single-video-display').textContent =
+    S.singleVideoFile ? S.singleVideoFile.name : 'No file selected'
+})
+
+// Apply source
+document.getElementById('btn-settings-apply').addEventListener('click', async () => {
+  const activeTab = document.querySelector('.modal-tab.active').dataset.tab
+  if (activeTab === 'remote') {
+    const url = document.getElementById('input-parquet-url').value.trim().replace(/\/$/, '')
+    if (!url) return
+    S.sourceType  = 'remote'
+    S.parquetBase = url
+    S.videoBase   = document.getElementById('input-video-url').value.trim().replace(/\/$/, '')
+    S.dirHandle   = null
+    persistSource()
+    updateSourceBadge()
+  } else if (activeTab === 'local') {
+    if (!S.dirHandle) return
+    S.sourceType = 'local'
+    updateSourceBadge()
+  } else {
+    // single sample
+    if (!S.singleParquetFile) { alert('Choose a .parquet file first.'); return }
+    S.sourceType = 'single'
+    updateSourceBadge()
+  }
+  modal.classList.add('hidden')
+  S.index = []
+  S.matchMap.clear()
+  S.expandedMatches.clear()
+  S.selectedRow = null
+  S.clipData = null
+  document.getElementById('empty-state').classList.remove('hidden')
+  document.getElementById('viewer').classList.add('hidden')
+  await loadIndex()
+})
+
+function updateSourceBadge() {
+  const badge = document.getElementById('source-badge')
+  if (S.sourceType === 'local') {
+    badge.textContent = `local: ${S.dirHandle?.name || '?'}`
+    badge.classList.add('active')
+  } else if (S.sourceType === 'single') {
+    badge.textContent = 'single sample'
+    badge.classList.add('active')
+  } else {
+    badge.textContent = 'remote'
+    badge.classList.remove('active')
+  }
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+loadPersistedSource()
+updateSourceBadge()
+if (S.sourceType === 'remote' && !S.parquetBase) {
+  // No source configured yet — guide the user straight to the picker.
+  loadIndex()                       // renders the "configure a source" message
+  modal.classList.remove('hidden')
+} else {
+  loadIndex()
+}
+</script>
+</body>
+</html>

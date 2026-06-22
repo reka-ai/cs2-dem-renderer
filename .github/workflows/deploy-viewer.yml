@@ -1,0 +1,64 @@
+name: Deploy viewer to Hugging Face Space
+
+# Syncs viewer/index.html to the static HF Space RekaAI/CS2-10k-viewer.
+# The Space loads the CS2-10k `sample/` subset over HTTPS by default, so the
+# viewer is the live, hosted companion to the dataset card.
+#
+# Requires a repo secret HF_TOKEN: a Hugging Face access token with write
+# permission to the RekaAI org (Settings -> Secrets and variables -> Actions).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - viewer/index.html
+      - .github/workflows/deploy-viewer.yml
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-viewer
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HF_SPACE: RekaAI/CS2-10k-viewer
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install huggingface_hub
+        run: pip install --upgrade "huggingface_hub>=0.25"
+
+      - name: Push viewer to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "HF_TOKEN secret not set; skipping deploy. Add it under Settings -> Secrets and variables -> Actions."
+            exit 0
+          fi
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+
+          repo_id = os.environ["HF_SPACE"]
+          api = HfApi(token=os.environ["HF_TOKEN"])
+
+          # Create the static Space if it does not exist yet (no-op otherwise).
+          api.create_repo(repo_id, repo_type="space", space_sdk="static", exist_ok=True)
+
+          # Static Spaces serve index.html from the repo root.
+          api.upload_file(
+              path_or_fileobj="viewer/index.html",
+              path_in_repo="index.html",
+              repo_id=repo_id,
+              repo_type="space",
+              commit_message="Sync viewer from GitHub",
+          )
+          print(f"Deployed to https://huggingface.co/spaces/{repo_id}")
+          PY

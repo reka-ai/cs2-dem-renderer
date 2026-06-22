@@ -1,0 +1,19 @@
+# Go build output
+dem-render/dem-render
+
+# Plugin build directory
+plugin-build/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Renderer outputs
+*.mp4
+*.parquet
+*.log
+
+# OS
+.DS_Store
