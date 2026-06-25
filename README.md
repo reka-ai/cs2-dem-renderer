@@ -25,7 +25,7 @@ Built for Linux but can work on Windows with minimal modifications.
 
 ### 1. Build the CS2 server plugin
 
-Counter-Strike 2 updates break compatibility with the server plugin with the main branch built for version 1.41.6.5. See the branches for other game versions.
+Counter-Strike 2 updates break compatibility with the server plugin with this branch built for version 1.41.2.8. See the branches for other game versions.
 
 ```bash
 cmake ./cs2-server-plugin/ -B plugin-build -DCMAKE_BUILD_TYPE=Release

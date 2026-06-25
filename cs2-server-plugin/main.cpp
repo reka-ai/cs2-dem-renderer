@@ -1,5 +1,3 @@
-#include <atomic>
-#include <mutex>
 #include <thread>
 #include <fstream>
 #include <queue>
@@ -26,9 +24,9 @@ using std::string;
 
 void* GetLibAddress(void* lib, const char* name) {
 #if defined _WIN32
-    return GetProcAddress((HMODULE)lib, name);
+	return GetProcAddress((HMODULE)lib, name);
 #else
-    return dlsym(lib, name);
+	return dlsym(lib, name);
 #endif
 }
 
@@ -38,9 +36,9 @@ char* GetLastErrorString() {
     static char s[_MAX_U64TOSTR_BASE2_COUNT];
     sprintf(s, "%lu", error);
 
-    return s;
+	return s;
 #else
-    return dlerror();
+	return dlerror();
 #endif
 }
 
@@ -48,7 +46,7 @@ void* LoadLib(const char* path) {
 #ifdef _WIN32
     return LoadLibrary(path);
 #else
-    return dlopen(path, RTLD_NOW);
+	return dlopen(path, RTLD_NOW);
 #endif
 }
 
@@ -63,30 +61,23 @@ struct Sequence {
 
 typedef bool (*AppSystemConnectFn)(IAppSystem* appSystem, CreateInterfaceFn factory);
 typedef void (*AppSystemShutdownFn)();
-typedef void (*FrameStageNotifyFn)(void* thisptr, ClientFrameStage_t curStage);
-typedef void (*ClientFullyConnectFn)(void* thisptr, int playerSlot);
 
 CreateInterfaceFn factory = NULL;
 AppSystemConnectFn serverConfigConnect = NULL;
-ClientFullyConnectFn originalClientFullyConnect = NULL;
 AppSystemShutdownFn serverConfigShutdown = NULL;
 CreateInterfaceFn serverCreateInterface = NULL;
 ISource2EngineToClient* engineToClient = NULL;
-ISource2Client* client = NULL;
-FrameStageNotifyFn originalFrameStageNotify = NULL;
 ICvar* g_pCVar = NULL;
+std::thread* demoPlaybackThread = NULL;
 string gameInfoPath;
 string gameInfoBackupPath;
 const char* demoPath = NULL;
 bool isPlayingDemo = false;
-std::atomic<int> currentTick{-1};
-std::atomic<bool> isQuitting{false};
+int currentTick = -1;
+bool isQuitting = false;
+bool initialized = false;
 int lastPauseTick = -1;
-std::mutex sequencesMutex;
 std::queue<Sequence> sequences;
-std::mutex pendingCommandsMutex;
-std::queue<std::string> pendingCommands;
-std::chrono::steady_clock::time_point startTime = std::chrono::steady_clock::now();
 
 void LogToFile(const char* pMsg) {
     FILE* pFile = fopen("dem-render.log", "a");
@@ -106,12 +97,12 @@ void DeleteLogFile()
 
 void Log(const char *msg, ...)
 {
-    va_list args;
-    va_start(args, msg);
-    char buf[1024] = {};
-    vsnprintf(buf, sizeof(buf), msg, args);
-    ConColorMsg(Color(227, 0, 255, 255), "DEM RENDER: %s\n", buf);
-    va_end(args);
+	va_list args;
+	va_start(args, msg);
+	char buf[1024] = {};
+	vsnprintf(buf, sizeof(buf), msg, args);
+	ConColorMsg(Color(227, 0, 255, 255), "DEM RENDER: %s\n", buf);
+	va_end(args);
     LogToFile(buf);
 }
 
@@ -160,46 +151,6 @@ static void UnhideCommandsAndCvars()
     }
 }
 
-// PatchVTableEntry overwrites a single vtable slot with newFunc, toggling page
-// protection around the write. Used to hook engine/client virtual functions.
-void PatchVTableEntry(void** vtable, int index, void* newFunc) {
-#ifdef _WIN32
-    size_t protectSize = sizeof(void*) * (index + 1);
-    DWORD oldProtect = 0;
-    if (!VirtualProtect(vtable, protectSize, PAGE_EXECUTE_READWRITE, &oldProtect))
-    {
-        PluginError("VirtualProtect PAGE_EXECUTE_READWRITE failed: %d", GetLastError());
-    }
-    vtable[index] = newFunc;
-    DWORD ignore = 0;
-    if (!VirtualProtect(vtable, protectSize, oldProtect, &ignore))
-    {
-        PluginError("VirtualProtect restore failed: %d", GetLastError());
-    }
-#else
-    // Use the page containing the slot we're writing, not the page containing the table's base.
-    void* slotAddr = (void*)&vtable[index];
-    void* pageStart = (void*)((uintptr_t)slotAddr & ~(PAGESIZE - 1));
-    if (mprotect(pageStart, PAGESIZE, PROT_READ | PROT_WRITE | PROT_EXEC) != 0)
-    {
-        PluginError("mprotect failed: %s", strerror(errno));
-    }
-    vtable[index] = newFunc;
-    if (mprotect(pageStart, PAGESIZE, PROT_READ | PROT_EXEC) != 0)
-    {
-        PluginError("mprotect restore failed: %s", strerror(errno));
-    }
-#endif
-}
-
-// QueueEngineCommand schedules a console command to run on the engine thread in the
-// next FrameStageNotify(FRAME_START). Engine commands are not safe to call from any
-// other thread, so all ExecuteClientCmd calls funnel through the engine thread.
-void QueueEngineCommand(const std::string& cmd) {
-    std::lock_guard<std::mutex> lock(pendingCommandsMutex);
-    pendingCommands.push(cmd);
-}
-
 ISource2EngineToClient* GetEngine()
 {
     if (engineToClient != NULL) {
@@ -240,7 +191,6 @@ void RestoreGameinfoFile() {
 }
 
 void LoadSequencesFile(string demoPath) {
-    std::lock_guard<std::mutex> lock(sequencesMutex);
     sequences = {};
 
     string demoJsonPath = demoPath + ".json";
@@ -280,84 +230,73 @@ void LoadSequencesFile(string demoPath) {
     }
 }
 
-// NewFrameStageNotify runs on the engine main thread. All demo playback control and
-// console commands are issued here — calling engine commands from another thread is not
-// thread safe and crashes CS2 (notably a demo_gototick issued right after endmovie from
-// a background thread). This replaces the old background PlaybackLoop thread.
-void NewFrameStageNotify(void* thisptr, ClientFrameStage_t stage)
-{
-    if (stage != ClientFrameStage_t::FRAME_START || isQuitting) {
-        originalFrameStageNotify(thisptr, stage);
-        return;
-    }
+void PlaybackLoop() {
+    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
-    auto engine = GetEngine();
-    if (engine == NULL) {
-        Log("Engine interface not found");
-        originalFrameStageNotify(thisptr, stage);
-        return;
-    }
-
-    // Drain commands queued from other contexts (e.g. setup commands from ClientFullyConnect).
-    {
-        std::lock_guard<std::mutex> lock(pendingCommandsMutex);
-        while (!pendingCommands.empty()) {
-            std::string cmd = pendingCommands.front();
-            pendingCommands.pop();
-            Log("Executing queued command: %s", cmd.c_str());
-            engine->ExecuteClientCmd(0, cmd.c_str(), true);
+    while (true) {
+        if (isQuitting) {
+            break;
         }
-    }
 
-    // Workaround to start demo playback when Steam is in offline mode: the +playdemo launch
-    // option doesn't work in that case, so force the command once a few seconds after launch.
-    if (demoPath != NULL) {
-        auto now = std::chrono::steady_clock::now();
-        auto secondsSinceStart = std::chrono::duration_cast<std::chrono::seconds>(now - startTime).count();
-        if (!engine->IsPlayingDemo() && secondsSinceStart >= 8) {
-            string cmd = "playdemo \"" + string(demoPath) + "\"";
-            demoPath = NULL;
-            Log("Force playing demo: %s", cmd.c_str());
-            engine->ExecuteClientCmd(0, cmd.c_str(), true);
+        auto engine = GetEngine();
+        if (engine == NULL) {
+            continue;
         }
-    }
 
-    auto demo = engine->GetDemoPlayer();
-    if (demo == NULL) {
-        originalFrameStageNotify(thisptr, stage);
-        return;
-    }
+        if (!initialized) {
+            // Required to make the spec_lock_to_accountid command working since the 25/04/2024 update - it looks like the command has been hidden.
+            // Also required to use the startmovie command.
+            UnhideCommandsAndCvars();
 
-    int newTick = demo->GetDemoTick();
-    bool newIsPlayingDemo = engine->IsPlayingDemo();
-    if (newIsPlayingDemo && !isPlayingDemo) {
-        Log("[%d] Demo playback started, sequences %d", newTick, sequences.size());
-        currentTick = -1;
-    }
-    else if (!newIsPlayingDemo && isPlayingDemo) {
-        Log("[%d] Demo playback stopped, sequences %d", newTick, sequences.size());
-        currentTick = -1;
-    }
+            // Since the 23/05/2024 CS2 update, the demo playback UI is displayed by default.
+			// We have to set the demo_ui_mode convar to 0 before starting the playback prevent the UI from being displayed.
+            engine->ExecuteClientCmd(0, "demo_ui_mode 0", true);
+            engine->ExecuteClientCmd(0, "sv_cheats 1", true); // required to unlock commands such as getposcopy
 
-    isPlayingDemo = newIsPlayingDemo;
-    if (!isPlayingDemo) {
-        originalFrameStageNotify(thisptr, stage);
-        return;
-    }
+            // If a demo path was provided via +playdemo argument, execute playdemo command manually.
+            // This is necessary because +playdemo doesn't work when Steam is in offline mode.
+            if (demoPath != NULL) {
+                string cmd = "playdemo \"" + string(demoPath) + "\"";
+                Log("Executing playdemo command: %s", cmd.c_str());
+                engine->ExecuteClientCmd(0, cmd.c_str(), true);
+            }
 
-    {
-        std::lock_guard<std::mutex> lock(sequencesMutex);
-        if (newTick != currentTick && !sequences.empty()) {
+            initialized = true;
+        }
+
+        bool newIsPlayingDemo = engine->IsPlayingDemo();
+        if (newIsPlayingDemo && !isPlayingDemo) {
+            Log("[%d] Demo playback started, sequences %d", currentTick, sequences.size());
+            currentTick = -1;
+        }
+        else if (!newIsPlayingDemo && isPlayingDemo) {
+            Log("[%d] Demo playback stopped, sequences %d", currentTick, sequences.size());
+            currentTick = -1;
+        }
+
+        isPlayingDemo = newIsPlayingDemo;
+        if (!isPlayingDemo) {
+            continue;
+        }
+
+        auto demo = engine->GetDemoFile();
+        if (demo == NULL) {
+            continue;
+        }
+
+        int newTick = demo->GetDemoTick();
+        if (newTick != currentTick) {
+            // Log("Tick: %d", newTick);
+
             // Fire actions whose tick falls in the range (fromTick, newTick].
             // Using a range instead of an exact match catches ticks that were skipped
             // when the demo advances multiple game ticks in a single frame.
-            // If the demo jumped backward (e.g. after demo_gototick, or an Oct-2025
-            // pause/resume tick regression), treat the new position as the baseline so
-            // already-executed actions don't re-fire.
-            int fromTick = (currentTick >= 0 && newTick < currentTick) ? newTick - 1 : currentTick.load();
+            // If the demo jumped backward (e.g. after demo_gototick), treat the new
+            // position as the baseline so already-executed actions don't re-fire.
+            int fromTick = (currentTick >= 0 && newTick < currentTick) ? newTick - 1 : currentTick;
 
-            Sequence& currentSequence = sequences.front();
-            for (auto& action : currentSequence.actions) {
+            Sequence currentSequence = sequences.front();
+            for (auto action : currentSequence.actions) {
                 if (action.tick <= fromTick || action.tick > newTick) {
                     continue;
                 }
@@ -384,7 +323,6 @@ void NewFrameStageNotify(void* thisptr, ClientFrameStage_t stage)
                     engine->ExecuteClientCmd(0, "demo_gototick 0", true);
                     currentTick = -1;
                     lastPauseTick = -1;
-                    break;
                 }
                 else {
                     Log("[%d] Executing: %s", newTick, action.cmd.c_str());
@@ -392,11 +330,9 @@ void NewFrameStageNotify(void* thisptr, ClientFrameStage_t stage)
                 }
             }
         }
+
+        currentTick = newTick;
     }
-
-    currentTick = newTick;
-
-    originalFrameStageNotify(thisptr, stage);
 }
 
 bool Connect(IAppSystem* appSystem, CreateInterfaceFn factoryFn)
@@ -405,12 +341,11 @@ bool Connect(IAppSystem* appSystem, CreateInterfaceFn factoryFn)
     bool result = serverConfigConnect(appSystem, factory);
 
     g_pCVar = (ICvar*)factory("VEngineCvar007", NULL);
-    // Required to make the spec_lock_to_accountid command working since the 25/04/2024 update - it looks like the command has been hidden.
-    // Also required to use the startmovie command.
-    UnhideCommandsAndCvars();
     #ifdef CON_COMMAND_ENABLED
         ConVar_Register();
     #endif
+
+    demoPlaybackThread = new std::thread(PlaybackLoop);
 
     RestoreGameinfoFile();
 
@@ -429,53 +364,31 @@ void Shutdown()
     #ifdef CON_COMMAND_ENABLED
         ConVar_Unregister();
     #endif
+
+    if (demoPlaybackThread != NULL) {
+        demoPlaybackThread->join();
+        demoPlaybackThread = NULL;
+    }
 }
 
 void AssertInsecureParameterIsPresent()
 {
     bool found = false;
-    // Since the "Armory" update, calling CommandLine()->HasParm("-insecure") crashes the game when the parameter is not present.
+	// Since the "Armory" update, calling CommandLine()->HasParm("-insecure") crashes the game when the parameter is not present.
     auto parameters = CommandLine()->GetParms();
-    for (int i = 0; i < CommandLine()->ParmCount(); i++)
-    {
-        if (strcmp(parameters[i], "-insecure") == 0)
-        {
-            found = true;
-            break;
-        }
-    }
+	for (int i = 0; i < CommandLine()->ParmCount(); i++)
+	{
+		if (strcmp(parameters[i], "-insecure") == 0)
+		{
+			found = true;
+			break;
+		}
+	}
 
-    if (!found)
-    {
-        PluginError("dem-render plugin loaded without the -insecure launch option.\n\nAborting.");
-    }
-}
-
-void NewClientFullyConnect(void* thisptr, int playerSlot)
-{
-    Log("ClientFullyConnect: playerSlot=%d", playerSlot);
-    if (client != NULL) {
-        originalClientFullyConnect(thisptr, playerSlot);
-        return;
-    }
-
-    // Hook FrameStageNotify to run engine commands from the engine thread, since it's not
-    // thread safe to call engine commands from another thread.
-    client = (ISource2Client*)factory("Source2Client002", NULL);
-    if (client != NULL) {
-        Log("Hooking FrameStageNotify");
-        auto vtable = *(void***)client;
-        originalFrameStageNotify = (FrameStageNotifyFn)vtable[36];
-        PatchVTableEntry(vtable, 36, (void*)&NewFrameStageNotify);
-        Log("Hooked FrameStageNotify");
-    }
-
-    // Since the 23/05/2024 CS2 update, the demo playback UI is displayed by default.
-    // We set demo_ui_mode to 0 before playback starts to prevent the UI from being displayed.
-    QueueEngineCommand("demo_ui_mode 0");
-    QueueEngineCommand("sv_cheats 1"); // required to unlock commands such as startmovie
-
-    originalClientFullyConnect(thisptr, playerSlot);
+	if (!found)
+	{
+		PluginError("dem-render plugin loaded without the -insecure launch option.\n\nAborting.");
+	}
 }
 
 EXPORT void* CreateInterface(const char* pName, int* pReturnCode)
@@ -504,17 +417,42 @@ EXPORT void* CreateInterface(const char* pName, int* pReturnCode)
     }
 
     void* original = serverCreateInterface(pName, pReturnCode);
-    auto vtable = *(void***)original;
     if (strcmp(pName, "Source2ServerConfig001") == 0)
     {
+        auto vtable = *(void***)original;
         serverConfigConnect = (AppSystemConnectFn)vtable[0];
         serverConfigShutdown = (AppSystemShutdownFn)vtable[4];
-        PatchVTableEntry(vtable, 0, (void*)&Connect);
-        PatchVTableEntry(vtable, 4, (void*)&Shutdown);
-    } else if (strcmp(pName, "Source2GameClients001") == 0)
-    {
-        originalClientFullyConnect = (ClientFullyConnectFn)vtable[15];
-        PatchVTableEntry(vtable, 15, (void*)&NewClientFullyConnect);
+
+#if defined _WIN32
+        DWORD oldProtect = 0;
+        if (!VirtualProtect(vtable, sizeof(void*) * 5, PAGE_EXECUTE_READWRITE, &oldProtect))
+        {
+            PluginError("VirtualProtect PAGE_EXECUTE_READWRITE failed: %d", GetLastError());
+        }
+
+        vtable[0] = &Connect;
+        vtable[4] = &Shutdown;
+
+        DWORD ignore = 0;
+        if (!VirtualProtect(vtable, sizeof(void*) * 5, oldProtect, &ignore))
+        {
+            PluginError("VirtualProtect restore failed: %d", GetLastError());
+        }
+#else
+        void* pageStart = (void*)((uintptr_t)vtable & ~(PAGESIZE - 1));
+        if (mprotect(pageStart, PAGESIZE, PROT_READ | PROT_WRITE | PROT_EXEC) != 0)
+        {
+            PluginError("mprotect failed: %s", strerror(errno));
+        }
+
+        vtable[0] = reinterpret_cast<void*>(&Connect);
+        vtable[4] = reinterpret_cast<void*>(&Shutdown);
+
+        if (mprotect(pageStart, PAGESIZE, PROT_READ | PROT_EXEC) != 0)
+        {
+            PluginError("mprotect restore failed: %s", strerror(errno));
+        }
+#endif
     }
 
     if (demoPath == NULL) {
@@ -535,10 +473,8 @@ EXPORT void* CreateInterface(const char* pName, int* pReturnCode)
 #ifdef CON_COMMAND_ENABLED
 CON_COMMAND(dem_render_info, "Prints dem-render plugin info")
 {
-    Log("Tick: %d", currentTick.load());
+    Log("Tick: %d", currentTick);
     Log("Is playing demo: %d", isPlayingDemo);
-
-    std::lock_guard<std::mutex> lock(sequencesMutex);
     Log("Sequence count: %d", sequences.size());
 }
 #endif

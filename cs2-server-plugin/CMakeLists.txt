@@ -18,7 +18,7 @@ FetchContent_Declare(
 FetchContent_Declare(
     hl2sdk
     GIT_REPOSITORY https://github.com/alliedmodders/hl2sdk.git
-    GIT_TAG 9ab16fa9fcdeeb30565dfdbf6fbb312356978a0b
+    GIT_TAG 7ae489c1722dfb117ff080d6403d85e01e9c53c9
 )
 
 # Make dependencies available
